@@ -1,0 +1,28 @@
+[package]
+name = "rolling-logger"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+description = "Production-grade rolling file logger with daily/size rotation, async gzip archival, configurable timezone and fsync durability"
+license = "MIT"
+keywords = ["logging", "rolling", "rotation", "gzip", "tracing", "file-logger"]
+categories = ["development-tools::debugging"]
+repository = ""
+readme = "README.md"
+
+[lib]
+name = "rolling_logger"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
+flate2 = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+anyhow = "1"
+
+[dev-dependencies]
+uuid = { version = "1", features = ["v4"] }
