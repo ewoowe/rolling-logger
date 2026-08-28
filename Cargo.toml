@@ -7,7 +7,7 @@ description = "Production-grade rolling file logger with daily/size rotation, as
 license = "MIT"
 keywords = ["logging", "rolling", "rotation", "gzip", "tracing", "file-logger"]
 categories = ["development-tools::debugging"]
-repository = ""
+repository = "https://github.com/ewoowe/rolling-logger"
 readme = "README.md"
 
 [lib]
