@@ -15,11 +15,13 @@ name = "rolling_logger"
 path = "src/lib.rs"
 
 [features]
-default = ["tracing"]
+default = ["slog-backend"]
 # tracing 门面集成（init_logger / LoggerGuards）
 tracing = ["dep:tracing-subscriber", "dep:tracing-appender"]
 # log 门面集成（init_log_logger）
 log-backend = ["dep:log"]
+# slog 门面集成（init_slog_logger）
+slog-backend = ["dep:slog"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -33,6 +35,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = tr
 tracing-appender = { version = "0.2", optional = true }
 # 可选：log 门面集成
 log = { version = "0.4", optional = true, features = ["std"] }
+# 可选：slog 门面集成
+slog = { version = "2", optional = true }
 
 [dev-dependencies]
 uuid = { version = "1", features = ["v4"] }
@@ -44,3 +48,7 @@ required-features = ["tracing"]
 [[example]]
 name = "log"
 required-features = ["log-backend"]
+
+[[example]]
+name = "slog"
+required-features = ["slog-backend"]

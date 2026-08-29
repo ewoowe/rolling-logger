@@ -1,6 +1,6 @@
 # rolling-logger
 
-生产级滚动文件日志库，核心滚动写入器是框架无关的 `io::Write` 实现，可对接 [`tracing`](https://docs.rs/tracing) 与 [`log`](https://docs.rs/log) 两大主流日志门面。
+生产级滚动文件日志库，核心滚动写入器是框架无关的 `io::Write` 实现，可对接 [`tracing`](https://docs.rs/tracing)、[`log`](https://docs.rs/log) 与 [`slog`](https://docs.rs/slog) 三大主流日志门面。
 
 ## 特性
 
@@ -29,9 +29,10 @@ rolling-logger = "0.1"
 | --- | --- | --- |
 | `tracing` | ✅ | [`tracing`](https://docs.rs/tracing)（`tracing-subscriber`） |
 | `log-backend` | ❌ | [`log`](https://docs.rs/log) |
+| `slog-backend` | ❌ | [`slog`](https://docs.rs/slog) |
 
-两个门面**互斥**，只能启用其一（同时启用会在编译期报错）。核心滚动写入器
-`RollingFileWriter` 是框架无关的 `io::Write`，两个门面复用同一套滚动/归档能力。
+三个门面**互斥**，只能启用其一（同时启用会在编译期报错）。核心滚动写入器
+`RollingFileWriter` 是框架无关的 `io::Write`，三个门面复用同一套滚动/归档能力。
 
 无论选择哪个门面，初始化都调用同一个入口 `init`：
 
@@ -85,7 +86,23 @@ let _guard = init(&config)?;
 log::info!("hello via log facade");
 ```
 
-完整的可运行示例见 [`examples/tracing.rs`](examples/tracing.rs)（tracing 门面）与 [`examples/log.rs`](examples/log.rs)（log 门面）。
+对接 `slog` 门面（禁用默认 tracing）：
+
+```toml
+[dependencies]
+rolling-logger = { version = "0.1", default-features = false, features = ["slog-backend"] }
+```
+
+```rust
+use rolling_logger::{init, LogConfig};
+
+let config = LogConfig { /* ... */ };
+let guard = init(&config)?;
+let log = guard.logger();   // slog 宏需显式传入 logger
+slog::info!(log, "hello via slog"; "user_id" => 42);
+```
+
+完整的可运行示例见 [`examples/tracing.rs`](examples/tracing.rs)（tracing 门面）、[`examples/log.rs`](examples/log.rs)（log 门面）与 [`examples/slog.rs`](examples/slog.rs)（slog 门面）。
 
 ## 门面无关日志宏
 
@@ -111,11 +128,15 @@ info!(target: "my_component", "带 target 的日志");
 | --- | --- |
 | `tracing`（默认） | `tracing::trace!` 等 |
 | `log-backend` | `log::trace!` 等 |
-| 无门面 | no-op（参数不求值、零开销） |
+| `slog-backend` / 无门面 | no-op（参数不求值、零开销） |
 
-> **边界**：门面无关宏只支持两个门面的**公共子集**语法（`info!("msg {}", x)` 与
-> `info!(target: "...", ...)`）。`tracing` 特有的结构化字段语法（如
-> `info!(field = v, "msg")`）需直接使用 `tracing::info!`。
+> **边界 1**：门面无关宏只支持 `tracing` / `log` 两个门面的**公共子集**语法
+> （`info!("msg {}", x)` 与 `info!(target: "...", ...)`）。`tracing` 特有的结构化
+> 字段语法（如 `info!(field = v, "msg")`）需直接使用 `tracing::info!`。
+>
+> **边界 2**：`slog` 门面**不纳入**门面无关宏体系。slog 的宏需显式传入 logger
+> 实例，且消息采用 `; key => value` 结构化语法（不支持 `{}` 位置参数），与
+> `tracing`/`log` 的语法不兼容。slog 门面下请直接使用 slog 原生宏。
 
 ## 配置说明
 
@@ -155,7 +176,7 @@ let config = LogConfig {
 };
 ```
 
-> 在 `log` 门面下，`log` 只支持单一全局级别，会取 `level` 的第一个 token
+> 在 `log` / `slog` 门面下，它们只支持单一全局级别，会取 `level` 的第一个 token
 > （如上例中的 `"info"`），后续的 per-target 规则被忽略。
 
 ### 监控丢日志
@@ -166,7 +187,8 @@ let guard = init(&config)?;
 eprintln!("dropped file lines: {}", guard.dropped_file_lines());
 ```
 
-> 仅 `tracing` 门面提供 `dropped_file_lines()`（`log` 门面是同步写入，无丢日志通道）。
+> 仅 `tracing` 门面提供 `dropped_file_lines()`（`log` / `slog` 门面是同步写入，
+> 无丢日志通道）。
 
 ### 手动解析时区
 
