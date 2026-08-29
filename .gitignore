@@ -3,3 +3,6 @@
 
 # 库项目不提交锁文件，由下游项目各自解析
 Cargo.lock
+
+# IDE 项目数据（CodeBuddy）
+.codebuddy/
