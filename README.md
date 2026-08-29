@@ -1,6 +1,6 @@
 # rolling-logger
 
-生产级滚动文件日志库，基于 [`tracing`](https://docs.rs/tracing) 生态构建，可被任何 Rust 项目直接引入复用。
+生产级滚动文件日志库，核心滚动写入器是框架无关的 `io::Write` 实现，可对接 [`tracing`](https://docs.rs/tracing) 与 [`log`](https://docs.rs/log) 两大主流日志门面。
 
 ## 特性
 
@@ -10,8 +10,9 @@
 - **可配置日志时区**（IANA 名，如 `"UTC"` / `"Asia/Shanghai"`），支持跨时区部署。
 - **可选 fsync 强持久化**：`flush` 时强制落盘，崩溃不丢日志。
 - **丢日志计数监控**：非阻塞写入因 channel 满而丢弃的行数可查询。
-- **优雅关闭**：`LoggerGuards` drop 时自动 flush 缓冲区并等待归档线程完成。
+- **优雅关闭**：`LoggerGuard` drop 时自动 flush 缓冲区并等待归档线程完成。
 - **同时输出控制台与文件**：控制台带 ANSI 颜色，文件为纯文本。
+- **门面无关日志宏**：`trace!` / `debug!` / `info!` / `warn!` / `error!` 五个宏，按启用的门面自动代理，代码无需关心底层是 `tracing` 还是 `log`。
 
 ## 安装
 
@@ -22,10 +23,29 @@
 rolling-logger = "0.1"
 ```
 
+## 门面支持（feature）
+
+| feature | 默认 | 底层门面 |
+| --- | --- | --- |
+| `tracing` | ✅ | [`tracing`](https://docs.rs/tracing)（`tracing-subscriber`） |
+| `log-backend` | ❌ | [`log`](https://docs.rs/log) |
+
+两个门面**互斥**，只能启用其一（同时启用会在编译期报错）。核心滚动写入器
+`RollingFileWriter` 是框架无关的 `io::Write`，两个门面复用同一套滚动/归档能力。
+
+无论选择哪个门面，初始化都调用同一个入口 `init`：
+
+```rust
+use rolling_logger::{init, LogConfig};
+
+let config = LogConfig { /* ... */ };
+let _guard = init(&config)?;
+```
+
 ## 快速开始
 
 ```rust
-use rolling_logger::{init_logger, LogConfig};
+use rolling_logger::{init, LogConfig};
 
 fn main() -> anyhow::Result<()> {
     let config = LogConfig {
@@ -40,8 +60,8 @@ fn main() -> anyhow::Result<()> {
         timezone: "UTC".into(),
     };
 
-    // 初始化日志系统，返回值必须保持存活直到程序退出
-    let _guard = init_logger(&config)?;
+    // 统一的初始化入口，底层门面由 feature 决定（默认 tracing）
+    let _guard = init(&config)?;
 
     tracing::info!("hello, rolling-logger!");
     tracing::warn!("this goes to both console and file");
@@ -50,7 +70,52 @@ fn main() -> anyhow::Result<()> {
 }
 ```
 
-完整的可运行示例见 [`examples/basic.rs`](examples/basic.rs)。
+对接 `log` 门面（禁用默认 tracing）：
+
+```toml
+[dependencies]
+rolling-logger = { version = "0.1", default-features = false, features = ["log-backend"] }
+```
+
+```rust
+use rolling_logger::{init, LogConfig};
+
+let config = LogConfig { /* ... */ };
+let _guard = init(&config)?;
+log::info!("hello via log facade");
+```
+
+完整的可运行示例见 [`examples/tracing.rs`](examples/tracing.rs)（tracing 门面）与 [`examples/log.rs`](examples/log.rs)（log 门面）。
+
+## 门面无关日志宏
+
+本 crate 提供 5 个门面无关宏，按编译期启用的 feature 自动代理到对应门面，
+业务代码无需关心底层是 `tracing` 还是 `log`：
+
+```rust
+use rolling_logger::{debug, error, info, trace, warn};
+
+trace!("trace 级别");
+debug!("debug 级别，变量值 {}", x);
+info!("info 级别");
+warn!("warn 级别");
+error!("error 级别");
+
+// 也支持 target 语法（两个门面的公共子集）
+info!(target: "my_component", "带 target 的日志");
+```
+
+代理规则：
+
+| 启用 feature | 宏代理到 |
+| --- | --- |
+| `tracing`（默认） | `tracing::trace!` 等 |
+| `log-backend` | `log::trace!` 等 |
+| 无门面 | no-op（参数不求值、零开销） |
+
+> **边界**：门面无关宏只支持两个门面的**公共子集**语法（`info!("msg {}", x)` 与
+> `info!(target: "...", ...)`）。`tracing` 特有的结构化字段语法（如
+> `info!(field = v, "msg")`）需直接使用 `tracing::info!`。
 
 ## 配置说明
 
@@ -81,7 +146,7 @@ logs/
 
 ### 自定义日志级别过滤
 
-`level` 字段遵循 `tracing_subscriber::EnvFilter` 语法：
+`level` 字段在 `tracing` 门面下遵循 `tracing_subscriber::EnvFilter` 语法：
 
 ```rust
 let config = LogConfig {
@@ -90,13 +155,18 @@ let config = LogConfig {
 };
 ```
 
+> 在 `log` 门面下，`log` 只支持单一全局级别，会取 `level` 的第一个 token
+> （如上例中的 `"info"`），后续的 per-target 规则被忽略。
+
 ### 监控丢日志
 
 ```rust
-let guard = init_logger(&config)?;
+let guard = init(&config)?;
 // ...运行一段时间后
 eprintln!("dropped file lines: {}", guard.dropped_file_lines());
 ```
+
+> 仅 `tracing` 门面提供 `dropped_file_lines()`（`log` 门面是同步写入，无丢日志通道）。
 
 ### 手动解析时区
 

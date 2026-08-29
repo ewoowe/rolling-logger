@@ -9,14 +9,6 @@ use chrono::{DateTime, NaiveDate, Utc};
 use chrono_tz::Tz;
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use tracing_appender::non_blocking::{ErrorCounter, WorkerGuard};
-use tracing_subscriber::fmt::time::FormatTime;
-use tracing_subscriber::fmt::{self, format::Writer};
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
-
-use crate::config::LogConfig;
 
 /// 用于生成唯一临时文件名的原子计数器（避免并发归档线程写同一 .tmp 冲突）
 static NEXT_TMP_ID: AtomicU64 = AtomicU64::new(0);
@@ -50,7 +42,7 @@ pub fn parse_timezone(tz: &str) -> Tz {
 }
 
 /// 获取指定时区的当前时间
-fn now_in(tz: Tz) -> DateTime<Tz> {
+pub(crate) fn now_in(tz: Tz) -> DateTime<Tz> {
     Utc::now().with_timezone(&tz)
 }
 
@@ -177,11 +169,11 @@ impl RollingFileWriter {
         // 日期变更：重置序号
         if date_changed {
             self.current_seq = 0;
-            tracing::debug!("[日志滚动] 检测到日期变更，新日期: {}，序号重置为 0", self.current_date);
+            crate::debug!("[日志滚动] 检测到日期变更，新日期: {}，序号重置为 0", self.current_date);
         } else if size_exceeded {
             // 仅大小超限：递增序号
             self.current_seq += 1;
-            tracing::debug!(
+            crate::debug!(
                 "[日志滚动] 文件大小超限，当前大小: {} bytes，限制: {} bytes，序号递增为 {}",
                 self.current_size, self.max_file_size, self.current_seq
             );
@@ -205,8 +197,8 @@ impl RollingFileWriter {
 
         // 打开新文件
         let file_path = self.dir.join(self.make_filename());
-        let filename = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
-        tracing::debug!("[日志滚动] 打开新日志文件: {}", file_path.display());
+        let _filename = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+        crate::debug!("[日志滚动] 打开新日志文件: {}", file_path.display());
         let file = OpenOptions::new()
             .create(true)
             .append(true)
@@ -216,9 +208,9 @@ impl RollingFileWriter {
         let metadata = file.metadata()?;
         self.current_size = metadata.len();
         self.current_file = Some(file);
-        tracing::debug!(
+        crate::debug!(
             "[日志滚动] 日志文件已就绪: {}，已有大小: {} bytes",
-            filename, self.current_size
+            _filename, self.current_size
         );
 
         Ok(())
@@ -272,8 +264,8 @@ impl RollingFileWriter {
     /// 每个文件压缩为 `history/{原名}.gz`，成功后删除原文件。单个文件失败
     /// 仅告警不中断。重复调用（源已删、目标已存在）是安全的。
     fn archive_files(files: Vec<PathBuf>, history_dir: PathBuf) {
-        if let Err(e) = fs::create_dir_all(&history_dir) {
-            tracing::warn!("[日志归档] 创建归档目录 {} 失败: {}", history_dir.display(), e);
+        if let Err(_e) = fs::create_dir_all(&history_dir) {
+            crate::warn!("[日志归档] 创建归档目录 {} 失败: {}", history_dir.display(), _e);
             return;
         }
 
@@ -290,21 +282,21 @@ impl RollingFileWriter {
             }
             // 目标已存在：仅清理残留源文件（幂等收尾）
             if gz_path.exists() {
-                if let Err(e) = fs::remove_file(&src) {
-                    tracing::warn!("[日志归档] 删除原文件 {} 失败: {}", src.display(), e);
+                if let Err(_e) = fs::remove_file(&src) {
+                    crate::warn!("[日志归档] 删除原文件 {} 失败: {}", src.display(), _e);
                 }
                 continue;
             }
 
             match Self::compress_file(&src, &gz_path) {
                 Ok(()) => {
-                    if let Err(e) = fs::remove_file(&src) {
-                        tracing::warn!("[日志归档] 删除原文件 {} 失败: {}", src.display(), e);
+                    if let Err(_e) = fs::remove_file(&src) {
+                        crate::warn!("[日志归档] 删除原文件 {} 失败: {}", src.display(), _e);
                     }
-                    tracing::debug!("[日志归档] 已归档: {} -> {}", src.display(), gz_path.display());
+                    crate::debug!("[日志归档] 已归档: {} -> {}", src.display(), gz_path.display());
                 }
-                Err(e) => {
-                    tracing::warn!("[日志归档] 压缩 {} 失败: {}", filename, e);
+                Err(_e) => {
+                    crate::warn!("[日志归档] 压缩 {} 失败: {}", filename, _e);
                 }
             }
         }
@@ -331,7 +323,7 @@ impl RollingFileWriter {
         // 限并发：超过上限则跳过本次归档
         if ACTIVE_ARCHIVERS.fetch_add(1, Ordering::SeqCst) >= MAX_CONCURRENT_ARCHIVERS {
             ACTIVE_ARCHIVERS.fetch_sub(1, Ordering::SeqCst);
-            tracing::debug!("[日志归档] 活跃归档线程已达上限，跳过本次归档");
+            crate::debug!("[日志归档] 活跃归档线程已达上限，跳过本次归档");
             return;
         }
 
@@ -467,7 +459,7 @@ impl RollingFileWriter {
             }
         }
         if tmp_removed > 0 {
-            tracing::debug!("[日志清理] 清理崩溃遗留临时文件 {} 个", tmp_removed);
+            crate::debug!("[日志清理] 清理崩溃遗留临时文件 {} 个", tmp_removed);
         }
 
         // 按文件名升序排序（最旧的在前）——文件名含日期+序号，字典序即时间序
@@ -477,15 +469,15 @@ impl RollingFileWriter {
         let total_count = archived.len();
         while archived.len() > max_files {
             if let Some(oldest) = archived.first() {
-                let filename = oldest.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
-                tracing::debug!("[日志清理] 删除过期归档文件: {}", filename);
+                let _filename = oldest.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+                crate::debug!("[日志清理] 删除过期归档文件: {}", _filename);
                 let _ = fs::remove_file(oldest);
             }
             archived.remove(0);
         }
         let removed = total_count - archived.len();
         if removed > 0 {
-            tracing::debug!("[日志清理] 清理完成，共删除 {} 个过期归档文件", removed);
+            crate::debug!("[日志清理] 清理完成，共删除 {} 个过期归档文件", removed);
         }
 
         Ok(())
@@ -518,18 +510,6 @@ impl Write for RollingFileWriter {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 自定义时间格式器（使用配置时区，精确到毫秒）
-// ─────────────────────────────────────────────────────────────────────────────
-
-struct TzTimer(Tz);
-
-impl FormatTime for TzTimer {
-    fn format_time(&self, w: &mut Writer<'_>) -> std::fmt::Result {
-        write!(w, "{}", now_in(self.0).format("%Y-%m-%d %H:%M:%S%.3f"))
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // 日志初始化
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -542,100 +522,6 @@ pub fn shutdown_archivers() {
     for handle in handles {
         let _ = handle.join();
     }
-}
-
-/// 日志系统守卫，持有控制台和文件两个非阻塞写入器的 guard。
-///
-/// 在 drop 时会 flush 缓冲区，因此必须在程序生命周期内保持存活。
-pub struct LoggerGuards {
-    /// 控制台写入守卫（仅用于持有以保持生命周期，drop 时 flush）
-    #[allow(dead_code)]
-    pub console: WorkerGuard,
-    /// 文件写入守卫（仅用于持有以保持生命周期，drop 时 flush）
-    #[allow(dead_code)]
-    pub file: WorkerGuard,
-    /// 文件日志因 channel 满而被丢弃的行数计数器
-    file_error_counter: ErrorCounter,
-}
-
-impl LoggerGuards {
-    /// 返回文件日志因 channel 满而被丢弃的行数（供监控/告警）
-    pub fn dropped_file_lines(&self) -> usize {
-        self.file_error_counter.dropped_lines()
-    }
-}
-
-impl Drop for LoggerGuards {
-    fn drop(&mut self) {
-        // 先等待归档线程完成（优雅关闭），再让字段 drop 时 flush 日志
-        shutdown_archivers();
-    }
-}
-
-/// 初始化日志系统
-///
-/// 返回 `LoggerGuards`，必须在程序生命周期内保持存活，否则非阻塞写入的日志会丢失。
-/// 建议将返回值绑定到 `main` 函数的变量中。
-pub fn init_logger(config: &LogConfig) -> anyhow::Result<LoggerGuards> {
-    // 解析时区（失败回退 UTC）
-    let tz = parse_timezone(&config.timezone);
-
-    // 创建滚动文件写入器
-    let rolling_writer = RollingFileWriter::new(
-        &config.dir,
-        &config.file_prefix,
-        config.max_file_size_mb,
-        config.max_files,
-        config.archive_delay_days,
-        config.archive_batch_size,
-        config.fsync_on_flush,
-        tz,
-    )?;
-
-    // 创建非阻塞写入器（控制台 + 文件）
-    let (console_writer, console_guard) = tracing_appender::non_blocking(io::stdout());
-    let (file_writer, file_guard) = tracing_appender::non_blocking(rolling_writer);
-    // 保存丢日志计数器（file_writer 稍后被 with_writer 消费，需先 clone 出来）
-    let file_error_counter = file_writer.error_counter();
-
-    // 构建日志级别过滤器
-    let env_filter = EnvFilter::try_new(&config.level)
-        .unwrap_or_else(|_| EnvFilter::new("info"));
-
-    // 构建控制台日志层（带颜色）
-    let console_layer = fmt::layer()
-        .with_writer(console_writer)
-        .with_ansi(true)
-        .with_target(true)
-        .with_thread_ids(true)
-        .with_thread_names(true)
-        .with_file(true)
-        .with_line_number(true)
-        .with_timer(TzTimer(tz));
-
-    // 构建文件日志层（无颜色，纯文本）
-    let file_layer = fmt::layer()
-        .with_writer(file_writer)
-        .with_ansi(false)
-        .with_target(true)
-        .with_thread_ids(true)
-        .with_thread_names(true)
-        .with_file(true)
-        .with_line_number(true)
-        .with_timer(TzTimer(tz));
-
-    // 初始化全局日志订阅器
-    tracing_subscriber::registry()
-        .with(env_filter)
-        .with(console_layer)
-        .with(file_layer)
-        .init();
-
-    Ok(LoggerGuards {
-        console: console_guard,
-        file: file_guard,
-        file_error_counter,
-    })
 }
 
 #[cfg(test)]
