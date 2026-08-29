@@ -14,6 +14,20 @@ use log::{LevelFilter, Log, Metadata, Record};
 use crate::config::LogConfig;
 use crate::writer::{now_in, parse_timezone, RollingFileWriter};
 
+/// ANSI 重置码
+const RESET: &str = "\x1b[0m";
+
+/// 按日志级别返回 ANSI 颜色码（控制台输出用）
+fn level_color(level: log::Level) -> &'static str {
+    match level {
+        log::Level::Error => "\x1b[31m", // 红
+        log::Level::Warn => "\x1b[33m",  // 黄
+        log::Level::Info => "\x1b[32m",  // 绿
+        log::Level::Debug => "\x1b[34m", // 蓝
+        log::Level::Trace => "\x1b[35m", // 紫
+    }
+}
+
 /// 面向 `log` 门面的滚动文件 logger
 ///
 /// 内部用 `Mutex<RollingFileWriter>` 获得 `Send + Sync`，从而可注册为全局 logger。
@@ -32,11 +46,26 @@ impl Log for RollingLog {
         if !self.enabled(record.metadata()) {
             return;
         }
+        let ts = now_in(self.tz).format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+
+        // 控制台（带颜色）
+        let color = level_color(record.level());
+        println!(
+            "{} {}{:5}{} {} - {}",
+            ts,
+            color,
+            record.level(),
+            RESET,
+            record.target(),
+            record.args()
+        );
+
+        // 文件（纯文本）
         let mut w = self.writer.lock().unwrap();
         let _ = writeln!(
             w,
             "{} [{:5}] {} - {}",
-            now_in(self.tz).format("%Y-%m-%d %H:%M:%S%.3f"),
+            ts,
             record.level(),
             record.target(),
             record.args()

@@ -11,13 +11,53 @@
 //! [`RollingFileWriter`]: crate::RollingFileWriter
 //! [`Drain`]: slog::Drain
 
+use std::fmt;
 use std::io::Write;
 use std::sync::Mutex;
 
 use chrono_tz::Tz;
+use slog::KV;
 
 use crate::config::LogConfig;
 use crate::writer::{now_in, parse_timezone, RollingFileWriter};
+
+/// ANSI 重置码
+const RESET: &str = "\x1b[0m";
+
+/// 按日志级别返回 ANSI 颜色码（控制台输出用）
+fn level_color(level: slog::Level) -> &'static str {
+    use slog::Level::*;
+    match level {
+        Critical | Error => "\x1b[31m", // 红
+        Warning => "\x1b[33m",          // 黄
+        Info => "\x1b[32m",             // 绿
+        Debug => "\x1b[34m",            // 蓝
+        Trace => "\x1b[35m",            // 紫
+    }
+}
+
+/// 将 slog 的 key-value 序列化为 `key=value` 文本的 [`Serializer`](slog::Serializer)
+///
+/// 字符串值用双引号包裹（如 `action="login"`），其余类型直接 `Display`。
+/// 每个 key-value 前加一个空格作为分隔符。
+struct KvSerializer<'a> {
+    out: &'a mut String,
+}
+
+impl slog::Serializer for KvSerializer<'_> {
+    fn emit_arguments(&mut self, key: slog::Key, val: &fmt::Arguments<'_>) -> slog::Result {
+        use std::fmt::Write as _;
+        let _ = write!(self.out, " {}={}", key, val);
+        Ok(())
+    }
+
+    /// 字符串值加双引号，避免值中含空格破坏日志格式
+    fn emit_str(&mut self, key: slog::Key, val: &str) -> slog::Result {
+        use std::fmt::Write as _;
+        let _ = write!(self.out, " {}=\"{}\"", key, val);
+        Ok(())
+    }
+}
 
 /// 面向 slog 的滚动文件 Drain
 ///
@@ -42,23 +82,47 @@ impl slog::Drain for RollingDrain {
     fn log(
         &self,
         record: &slog::Record<'_>,
-        _values: &slog::OwnedKVList,
+        values: &slog::OwnedKVList,
     ) -> Result<Self::Ok, Self::Err> {
         // slog 的宏直接调 `Logger::log`（不经过 `is_enabled`），
         // 因此运行时级别过滤必须在此手动判断。
         if !self.is_enabled(record.level()) {
             return Ok(());
         }
-        // 结构化 key-value（`_values`）暂不序列化，仅输出时间/级别/模块/消息。
-        // 若需要完整结构化输出，可在后续扩展为 JSON 等序列化格式。
+
+        // 序列化结构化 key-value：先宏内联的（record.kv()），再 logger 上下文的（values）
+        let mut kv_buf = String::new();
+        {
+            let mut ser = KvSerializer { out: &mut kv_buf };
+            let _ = record.kv().serialize(record, &mut ser);
+            let _ = values.serialize(record, &mut ser);
+        }
+
+        let ts = now_in(self.tz).format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+
+        // 控制台（带颜色）
+        let color = level_color(record.level());
+        println!(
+            "{} {}{}{} {} - {}{}",
+            ts,
+            color,
+            record.level(),
+            RESET,
+            record.module(),
+            record.msg(),
+            kv_buf
+        );
+
+        // 文件（纯文本）
         let mut w = self.writer.lock().unwrap();
         let _ = writeln!(
             w,
-            "{} [{}] {} - {}",
-            now_in(self.tz).format("%Y-%m-%d %H:%M:%S%.3f"),
+            "{} [{}] {} - {}{}",
+            ts,
             record.level(),
             record.module(),
-            record.msg()
+            record.msg(),
+            kv_buf
         );
         Ok(())
     }
