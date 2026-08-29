@@ -26,7 +26,7 @@
 #[doc(hidden)]
 pub use tracing::{debug, error, info, trace, warn};
 
-#[cfg(all(feature = "log-backend", not(feature = "tracing")))]
+#[cfg(feature = "log-backend")]
 #[doc(hidden)]
 pub use log::{debug, error, info, trace, warn};
 

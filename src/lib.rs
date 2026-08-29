@@ -128,21 +128,20 @@ impl LoggerGuard {
 /// 底层门面由编译期 feature 决定（`tracing` / `log-backend` / `slog-backend`，三者互斥）。
 /// 返回 [`LoggerGuard`]，必须保持存活到程序结束。
 pub fn init(config: &LogConfig) -> anyhow::Result<LoggerGuard> {
+    // 三个门面 feature 由顶部的 compile_error! 保证互斥（最多启用其一），
+    // 因此每个分支只需单一 `#[cfg(feature = "...")]`，无需 not(...) 组合条件。
     #[cfg(feature = "tracing")]
     {
         Ok(LoggerGuard {
             tracing: init_logger(config)?,
         })
     }
-    #[cfg(all(feature = "log-backend", not(feature = "tracing")))]
+    #[cfg(feature = "log-backend")]
     {
         init_log_logger(config)?;
         Ok(LoggerGuard {})
     }
-    #[cfg(all(
-        feature = "slog-backend",
-        not(any(feature = "tracing", feature = "log-backend"))
-    ))]
+    #[cfg(feature = "slog-backend")]
     {
         Ok(LoggerGuard {
             slog: init_slog_logger(config)?,
