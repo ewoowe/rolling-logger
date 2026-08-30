@@ -216,6 +216,11 @@ use rolling_logger::parse_timezone;
 let tz = parse_timezone("Asia/Shanghai"); // 失败回退 UTC
 ```
 
+## Roadmap
+
+规划方向见 [ROADMAP.zh-CN.md](ROADMAP.zh-CN.md)（英文版见 [ROADMAP.md](ROADMAP.md)），
+包括可配置的日志格式化与第三方门面桥接。
+
 ## License
 
 [MIT](LICENSE)

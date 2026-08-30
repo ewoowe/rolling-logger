@@ -232,6 +232,11 @@ use rolling_logger::parse_timezone;
 let tz = parse_timezone("Asia/Shanghai"); // falls back to UTC on failure
 ```
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the planned direction, including configurable
+log formatting and third-party facade bridging. (中文版见 [ROADMAP.zh-CN.md](ROADMAP.zh-CN.md))
+
 ## License
 
 [MIT](LICENSE)
