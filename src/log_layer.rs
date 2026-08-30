@@ -1,7 +1,8 @@
-//! log 门面集成：`init_log_logger`
+//! log facade integration: `init_log_logger`.
 //!
-//! 仅在启用 `log-backend` feature 时编译。将 [`RollingFileWriter`] 包装为
-//! 全局 `log` 门面 logger，复用同一套滚动/归档能力。
+//! Compiled only when the `log-backend` feature is enabled. Wraps
+//! [`RollingFileWriter`] as a global `log` facade logger, reusing the same
+//! rolling/archival capability.
 //!
 //! [`RollingFileWriter`]: crate::RollingFileWriter
 
@@ -14,23 +15,24 @@ use log::{LevelFilter, Log, Metadata, Record};
 use crate::config::LogConfig;
 use crate::writer::{now_in, parse_timezone, RollingFileWriter};
 
-/// ANSI 重置码
+/// ANSI reset code.
 const RESET: &str = "\x1b[0m";
 
-/// 按日志级别返回 ANSI 颜色码（控制台输出用）
+/// Returns the ANSI color code for a log level (console output).
 fn level_color(level: log::Level) -> &'static str {
     match level {
-        log::Level::Error => "\x1b[31m", // 红
-        log::Level::Warn => "\x1b[33m",  // 黄
-        log::Level::Info => "\x1b[32m",  // 绿
-        log::Level::Debug => "\x1b[34m", // 蓝
-        log::Level::Trace => "\x1b[35m", // 紫
+        log::Level::Error => "\x1b[31m", // red
+        log::Level::Warn => "\x1b[33m",  // yellow
+        log::Level::Info => "\x1b[32m",  // green
+        log::Level::Debug => "\x1b[34m", // blue
+        log::Level::Trace => "\x1b[35m", // magenta
     }
 }
 
-/// 面向 `log` 门面的滚动文件 logger
+/// Rolling file logger for the `log` facade.
 ///
-/// 内部用 `Mutex<RollingFileWriter>` 获得 `Send + Sync`，从而可注册为全局 logger。
+/// Uses `Mutex<RollingFileWriter>` to obtain `Send + Sync`, so it can be
+/// registered as the global logger.
 struct RollingLog {
     writer: Mutex<RollingFileWriter>,
     level: LevelFilter,
@@ -48,7 +50,7 @@ impl Log for RollingLog {
         }
         let ts = now_in(self.tz).format("%Y-%m-%d %H:%M:%S%.3f").to_string();
 
-        // 控制台（带颜色）
+        // Console (colored).
         let color = level_color(record.level());
         println!(
             "{} {}{:5}{} {} - {}",
@@ -60,7 +62,7 @@ impl Log for RollingLog {
             record.args()
         );
 
-        // 文件（纯文本）
+        // File (plain text).
         let mut w = self.writer.lock().unwrap();
         let _ = writeln!(
             w,
@@ -77,10 +79,11 @@ impl Log for RollingLog {
     }
 }
 
-/// 将 `config.level` 解析为 log 的 [`LevelFilter`]
+/// Parses `config.level` into a log [`LevelFilter`].
 ///
-/// `config.level` 遵循 `EnvFilter` 语法（如 `"info,my_crate=debug"`），
-/// 而 `log` 门面只支持单个全局级别，这里取第一个 token，解析失败回退 `Info`。
+/// `config.level` follows `EnvFilter` syntax (e.g. "info,my_crate=debug"), but
+/// the `log` facade only supports a single global level, so this takes the first
+/// token and falls back to `Info` on failure.
 fn parse_level(level: &str) -> LevelFilter {
     level
         .split(',')
@@ -89,10 +92,12 @@ fn parse_level(level: &str) -> LevelFilter {
         .unwrap_or(LevelFilter::Info)
 }
 
-/// 初始化 `log` 门面日志系统
+/// Initialize the `log` facade logging system.
 ///
-/// 注册全局 logger（同一进程只能调用一次），同时输出控制台（带颜色）与滚动文件。
-/// 返回 [`crate::LoggerGuard`]，必须保持存活到程序结束，drop 时优雅关闭归档线程。
+/// Registers the global logger (callable once per process), outputting to both
+/// console (colored) and rolling file. Returns a [`crate::LoggerGuard`] that must
+/// stay alive until the program exits; dropping it gracefully shuts down the
+/// archiver threads.
 pub fn init_log_logger(config: &LogConfig) -> anyhow::Result<crate::LoggerGuard> {
     let tz = parse_timezone(&config.timezone);
     let writer = RollingFileWriter::new(

@@ -1,43 +1,49 @@
 use serde::Deserialize;
 
-/// 日志配置
+/// Logging configuration.
 #[derive(Clone, Debug, Deserialize)]
 pub struct LogConfig {
-    /// 日志文件存储目录
+    /// Directory where log files are stored.
     pub dir: String,
-    /// 日志级别过滤规则（如 "info,zero_distance=debug"）
+    /// Log level filter rule (e.g. "info,zero_distance=debug").
     pub level: String,
-    /// 日志文件前缀名
+    /// Log file name prefix.
     pub file_prefix: String,
-    /// 单个日志文件最大大小（MB）
+    /// Maximum size of a single log file (in MB).
     pub max_file_size_mb: u64,
-    /// 最多保留多少个日志文件
+    /// Maximum number of archived log files to retain.
     pub max_files: usize,
-    /// 归档等待天数：仅归档日期早于「今天 - N 天」的历史日志
-    /// 0 = 今天之前的日志都归档；1 = 昨天之前的日志都归档；依此类推
-    /// 负数 = 滚动即归档（历史日志关闭后立即归档，不等天数）
-    /// 默认 0
+    /// Archive delay in days: only archive log files whose date is older than
+    /// "today - N days".
+    ///
+    /// - `0` = archive everything before today.
+    /// - `1` = archive everything before yesterday, and so on.
+    /// - negative = archive immediately upon rotation (don't wait).
+    ///
+    /// Defaults to `0`.
     #[serde(default)]
     pub archive_delay_days: i64,
-    /// 单次归档最多处理的文件数量，避免一次性压缩海量文件阻塞过久
-    /// 超过该数量的文件留待下次滚动时继续归档，默认 100
+    /// Maximum number of files to archive in a single pass, to avoid blocking
+    /// too long when compressing a huge backlog. Files beyond this limit are
+    /// left for the next rotation. Defaults to `100`.
     #[serde(default = "default_archive_batch_size")]
     pub archive_batch_size: usize,
-    /// flush 时是否强制 fsync 落盘（默认 false）
-    /// true 保证崩溃后日志不丢，但会明显降低日志吞吐
+    /// Whether to force `fsync` on flush (default `false`).
+    /// When `true`, logs survive crashes but throughput drops noticeably.
     #[serde(default)]
     pub fsync_on_flush: bool,
-    /// 日志时间戳使用的时区（IANA 名，如 "UTC"/"Asia/Shanghai"），默认 "UTC"
+    /// Timezone used for log timestamps (IANA name, e.g. "UTC"/"Asia/Shanghai"),
+    /// defaults to "UTC".
     #[serde(default = "default_timezone")]
     pub timezone: String,
 }
 
-/// 默认单次归档文件数量
+/// Default number of files archived per pass.
 fn default_archive_batch_size() -> usize {
     100
 }
 
-/// 默认日志时区
+/// Default log timezone.
 fn default_timezone() -> String {
     "UTC".to_string()
 }

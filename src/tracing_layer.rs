@@ -1,7 +1,8 @@
-//! tracing 门面集成：`init_logger` 与 `LoggerGuards`
+//! tracing facade integration: `init_logger` and `LoggerGuards`.
 //!
-//! 仅在启用 `tracing` feature 时编译。基于 `tracing-subscriber` +
-//! `tracing-appender` 构建「控制台 + 滚动文件」双输出层。
+//! Compiled only when the `tracing` feature is enabled. Builds a dual output
+//! layer ("console + rolling file") on top of `tracing-subscriber` and
+//! `tracing-appender`.
 
 use std::io;
 
@@ -16,7 +17,7 @@ use tracing_subscriber::EnvFilter;
 use crate::config::LogConfig;
 use crate::writer::{now_in, parse_timezone, shutdown_archivers, RollingFileWriter};
 
-/// 自定义时间格式器（使用配置时区，精确到毫秒）
+/// Custom time formatter (configured timezone, millisecond precision).
 struct TzTimer(Tz);
 
 impl FormatTime for TzTimer {
@@ -25,23 +26,25 @@ impl FormatTime for TzTimer {
     }
 }
 
-/// tracing 门面的内部守卫，持有控制台和文件两个非阻塞写入器的 guard。
+/// Internal guard for the tracing facade, holding the console and file
+/// non-blocking writer guards.
 ///
-/// 仅供 [`crate::LoggerGuard`] 内部持有；在 drop 时会 flush 缓冲区。
-/// 不对外暴露——统一由 [`crate::LoggerGuard`] 封装并提供优雅关闭。
+/// Held only by [`crate::LoggerGuard`]; flushes buffers on drop. Not exposed
+/// publicly — the unified [`crate::LoggerGuard`] wraps it and provides graceful
+/// shutdown.
 pub(crate) struct LoggerGuards {
-    /// 控制台写入守卫（仅用于持有以保持生命周期，drop 时 flush）
+    /// Console writer guard (held only to keep it alive; flushes on drop).
     #[allow(dead_code)]
     console: WorkerGuard,
-    /// 文件写入守卫（仅用于持有以保持生命周期，drop 时 flush）
+    /// File writer guard (held only to keep it alive; flushes on drop).
     #[allow(dead_code)]
     file: WorkerGuard,
-    /// 文件日志因 channel 满而被丢弃的行数计数器
+    /// Counter for file log lines dropped because the channel was full.
     file_error_counter: ErrorCounter,
 }
 
 impl LoggerGuards {
-    /// 返回文件日志因 channel 满而被丢弃的行数（供监控/告警）
+    /// Returns the number of file log lines dropped (for monitoring/alerting).
     pub fn dropped_file_lines(&self) -> usize {
         self.file_error_counter.dropped_lines()
     }
@@ -49,20 +52,22 @@ impl LoggerGuards {
 
 impl Drop for LoggerGuards {
     fn drop(&mut self) {
-        // 先等待归档线程完成（优雅关闭），再让字段 drop 时 flush 日志
+        // Wait for archiver threads first (graceful shutdown), then let the
+        // fields flush logs on drop.
         shutdown_archivers();
     }
 }
 
-/// 初始化 tracing 日志系统
+/// Initialize the tracing logging system.
 ///
-/// 返回 [`crate::LoggerGuard`]，必须在程序生命周期内保持存活，否则非阻塞写入的日志会丢失。
-/// 建议将返回值绑定到 `main` 函数的变量中。
+/// Returns a [`crate::LoggerGuard`] that must stay alive for the program's
+/// lifetime, otherwise non-blocking written logs would be lost. Bind the return
+/// value to a variable in the `main` function.
 pub fn init_logger(config: &LogConfig) -> anyhow::Result<crate::LoggerGuard> {
-    // 解析时区（失败回退 UTC）
+    // Parse timezone (falls back to UTC on failure).
     let tz = parse_timezone(&config.timezone);
 
-    // 创建滚动文件写入器
+    // Create the rolling file writer.
     let rolling_writer = RollingFileWriter::new(
         &config.dir,
         &config.file_prefix,
@@ -74,17 +79,17 @@ pub fn init_logger(config: &LogConfig) -> anyhow::Result<crate::LoggerGuard> {
         tz,
     )?;
 
-    // 创建非阻塞写入器（控制台 + 文件）
+    // Create non-blocking writers (console + file).
     let (console_writer, console_guard) = tracing_appender::non_blocking(io::stdout());
     let (file_writer, file_guard) = tracing_appender::non_blocking(rolling_writer);
-    // 保存丢日志计数器（file_writer 稍后被 with_writer 消费，需先 clone 出来）
+    // Save the drop counter before `file_writer` is consumed by `with_writer`.
     let file_error_counter = file_writer.error_counter();
 
-    // 构建日志级别过滤器
+    // Build the log level filter.
     let env_filter = EnvFilter::try_new(&config.level)
         .unwrap_or_else(|_| EnvFilter::new("info"));
 
-    // 构建控制台日志层（带颜色）
+    // Console layer (with color).
     let console_layer = fmt::layer()
         .with_writer(console_writer)
         .with_ansi(true)
@@ -95,7 +100,7 @@ pub fn init_logger(config: &LogConfig) -> anyhow::Result<crate::LoggerGuard> {
         .with_line_number(true)
         .with_timer(TzTimer(tz));
 
-    // 构建文件日志层（无颜色，纯文本）
+    // File layer (no color, plain text).
     let file_layer = fmt::layer()
         .with_writer(file_writer)
         .with_ansi(false)
@@ -106,7 +111,7 @@ pub fn init_logger(config: &LogConfig) -> anyhow::Result<crate::LoggerGuard> {
         .with_line_number(true)
         .with_timer(TzTimer(tz));
 
-    // 初始化全局日志订阅器
+    // Initialize the global subscriber.
     tracing_subscriber::registry()
         .with(env_filter)
         .with(console_layer)

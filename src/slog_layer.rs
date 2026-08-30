@@ -1,12 +1,14 @@
-//! slog 门面集成：`init_slog_logger`
+//! slog facade integration: `init_slog_logger`.
 //!
-//! 仅在启用 `slog-backend` feature 时编译。将 [`RollingFileWriter`] 包装为
-//! slog 的 [`Drain`]，复用同一套滚动/归档能力。
+//! Compiled only when the `slog-backend` feature is enabled. Wraps
+//! [`RollingFileWriter`] as a slog [`Drain`], reusing the same rolling/archival
+//! capability.
 //!
-//! 注意：slog 的宏（`slog::info!(logger, "msg"; "k" => v)`）需要显式传入
-//! logger 实例，且消息采用结构化 key-value 语法，与 `log`/`tracing` 的
-//! `info!("msg {}", x)` 位置参数语法不兼容，因此 **slog 不纳入 `facade` 宏体系**，
-//! 请直接使用 slog 原生宏。
+//! Note: slog macros (`slog::info!(logger, "msg"; "k" => v)`) require an
+//! explicit logger argument and use structured key-value syntax, which is
+//! incompatible with the positional-argument syntax of `log`/`tracing`
+//! (`info!("msg {}", x)`). Therefore slog is **not** part of the `facade` macro
+//! layer; use slog's native macros directly.
 //!
 //! [`RollingFileWriter`]: crate::RollingFileWriter
 //! [`Drain`]: slog::Drain
@@ -21,25 +23,26 @@ use slog::KV;
 use crate::config::LogConfig;
 use crate::writer::{now_in, parse_timezone, RollingFileWriter};
 
-/// ANSI 重置码
+/// ANSI reset code.
 const RESET: &str = "\x1b[0m";
 
-/// 按日志级别返回 ANSI 颜色码（控制台输出用）
+/// Returns the ANSI color code for a slog level (console output).
 fn level_color(level: slog::Level) -> &'static str {
     use slog::Level::*;
     match level {
-        Critical | Error => "\x1b[31m", // 红
-        Warning => "\x1b[33m",          // 黄
-        Info => "\x1b[32m",             // 绿
-        Debug => "\x1b[34m",            // 蓝
-        Trace => "\x1b[35m",            // 紫
+        Critical | Error => "\x1b[31m", // red
+        Warning => "\x1b[33m",          // yellow
+        Info => "\x1b[32m",             // green
+        Debug => "\x1b[34m",            // blue
+        Trace => "\x1b[35m",            // magenta
     }
 }
 
-/// 将 slog 的 key-value 序列化为 `key=value` 文本的 [`Serializer`](slog::Serializer)
+/// A [`Serializer`](slog::Serializer) that renders slog key-values as
+/// `key=value` text.
 ///
-/// 字符串值用双引号包裹（如 `action="login"`），其余类型直接 `Display`。
-/// 每个 key-value 前加一个空格作为分隔符。
+/// String values are wrapped in double quotes (e.g. `action="login"`); other
+/// types are rendered via `Display`. A leading space is used as a separator.
 struct KvSerializer<'a> {
     out: &'a mut String,
 }
@@ -51,7 +54,8 @@ impl slog::Serializer for KvSerializer<'_> {
         Ok(())
     }
 
-    /// 字符串值加双引号，避免值中含空格破坏日志格式
+    /// Wrap string values in double quotes to avoid breaking the log format
+    /// when the value contains spaces.
     fn emit_str(&mut self, key: slog::Key, val: &str) -> slog::Result {
         use std::fmt::Write as _;
         let _ = write!(self.out, " {}=\"{}\"", key, val);
@@ -59,11 +63,11 @@ impl slog::Serializer for KvSerializer<'_> {
     }
 }
 
-/// 面向 slog 的滚动文件 Drain
+/// Rolling file drain for slog.
 ///
-/// 内部用 `Mutex<RollingFileWriter>` 获得 `Send + Sync`，从而满足 `Logger::root`
-/// 对 `Drain: Send + Sync + 'static` 的要求。`Err = Never` 表示写入永不失败
-/// （IO 错误被吞掉并丢弃该条日志）。
+/// Uses `Mutex<RollingFileWriter>` to obtain `Send + Sync`, satisfying
+/// `Logger::root`'s `Drain: Send + Sync + 'static` bound. `Err = Never` means
+/// writes never fail (IO errors are swallowed and the line is dropped).
 struct RollingDrain {
     writer: Mutex<RollingFileWriter>,
     tz: Tz,
@@ -74,7 +78,7 @@ impl slog::Drain for RollingDrain {
     type Ok = ();
     type Err = slog::Never;
 
-    /// 运行时级别过滤：低于配置级别的日志直接跳过
+    /// Runtime level filter: skip logs below the configured level.
     fn is_enabled(&self, level: slog::Level) -> bool {
         level <= self.level
     }
@@ -84,13 +88,14 @@ impl slog::Drain for RollingDrain {
         record: &slog::Record<'_>,
         values: &slog::OwnedKVList,
     ) -> Result<Self::Ok, Self::Err> {
-        // slog 的宏直接调 `Logger::log`（不经过 `is_enabled`），
-        // 因此运行时级别过滤必须在此手动判断。
+        // slog macros call `Logger::log` directly (bypassing `is_enabled`), so
+        // the runtime level filter must be applied manually here.
         if !self.is_enabled(record.level()) {
             return Ok(());
         }
 
-        // 序列化结构化 key-value：先宏内联的（record.kv()），再 logger 上下文的（values）
+        // Serialize structured key-values: inline ones (record.kv()) first, then
+        // logger-context ones (values).
         let mut kv_buf = String::new();
         {
             let mut ser = KvSerializer { out: &mut kv_buf };
@@ -100,7 +105,7 @@ impl slog::Drain for RollingDrain {
 
         let ts = now_in(self.tz).format("%Y-%m-%d %H:%M:%S%.3f").to_string();
 
-        // 控制台（带颜色）
+        // Console (colored).
         let color = level_color(record.level());
         println!(
             "{} {}{}{} {} - {}{}",
@@ -113,7 +118,7 @@ impl slog::Drain for RollingDrain {
             kv_buf
         );
 
-        // 文件（纯文本）
+        // File (plain text).
         let mut w = self.writer.lock().unwrap();
         let _ = writeln!(
             w,
@@ -128,10 +133,11 @@ impl slog::Drain for RollingDrain {
     }
 }
 
-/// 将 `config.level` 解析为 slog 的 [`Level`]
+/// Parses `config.level` into a slog [`Level`].
 ///
-/// `config.level` 遵循 `EnvFilter` 语法（如 `"info,my_crate=debug"`），
-/// 而 slog 只支持单一全局级别，这里取第一个 token，解析失败回退 `Info`。
+/// `config.level` follows `EnvFilter` syntax (e.g. "info,my_crate=debug"), but
+/// slog only supports a single global level, so this takes the first token and
+/// falls back to `Info` on failure.
 ///
 /// [`Level`]: slog::Level
 fn parse_level(level: &str) -> slog::Level {
@@ -142,10 +148,10 @@ fn parse_level(level: &str) -> slog::Level {
         .unwrap_or(slog::Level::Info)
 }
 
-/// 初始化 slog 门面日志系统
+/// Initialize the slog facade logging system.
 ///
-/// 返回 [`crate::LoggerGuard`]，通过 [`LoggerGuard::logger`](crate::LoggerGuard::logger)
-/// 获取 `slog::Logger` 传给 slog 宏：
+/// Returns a [`crate::LoggerGuard`]; obtain the `slog::Logger` via
+/// [`LoggerGuard::logger`](crate::LoggerGuard::logger) and pass it to slog macros:
 ///
 /// ```ignore
 /// let guard = init_slog_logger(&config)?;
@@ -153,7 +159,8 @@ fn parse_level(level: &str) -> slog::Level {
 /// slog::info!(log, "hello"; "user_id" => 42);
 /// ```
 ///
-/// guard 必须保持存活到程序结束，drop 时优雅关闭归档线程。
+/// The guard must stay alive until the program exits; dropping it gracefully
+/// shuts down the archiver threads.
 pub fn init_slog_logger(config: &LogConfig) -> anyhow::Result<crate::LoggerGuard> {
     let tz = parse_timezone(&config.timezone);
     let writer = RollingFileWriter::new(
@@ -173,7 +180,8 @@ pub fn init_slog_logger(config: &LogConfig) -> anyhow::Result<crate::LoggerGuard
         level: parse_level(&config.level),
     };
 
-    // Logger::root 要求 Drain 的 Err = Never、Ok = ()，我们的 RollingDrain 直接满足
+    // Logger::root requires Drain with Err = Never and Ok = (), which our
+    // RollingDrain satisfies directly.
     let logger = slog::Logger::root(drain, slog::o!());
     Ok(crate::LoggerGuard { slog: logger })
 }

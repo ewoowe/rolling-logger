@@ -16,11 +16,11 @@ path = "src/lib.rs"
 
 [features]
 default = ["tracing"]
-# tracing 门面集成（init_logger / LoggerGuards）
+# tracing facade integration (init_logger / LoggerGuards)
 tracing = ["dep:tracing-subscriber", "dep:tracing-appender"]
-# log 门面集成（init_log_logger）
+# log facade integration (init_log_logger)
 log-backend = ["dep:log"]
-# slog 门面集成（init_slog_logger）
+# slog facade integration (init_slog_logger)
 slog-backend = ["dep:slog"]
 
 [dependencies]
@@ -30,12 +30,12 @@ chrono-tz = "0.10"
 flate2 = "1"
 tracing = "0.1"
 anyhow = "1"
-# 可选：tracing 门面集成
+# optional: tracing facade integration
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 tracing-appender = { version = "0.2", optional = true }
-# 可选：log 门面集成
+# optional: log facade integration
 log = { version = "0.4", optional = true, features = ["std"] }
-# 可选：slog 门面集成
+# optional: slog facade integration
 slog = { version = "2", optional = true }
 
 [dev-dependencies]

@@ -1,40 +1,53 @@
 # rolling-logger
 
-生产级滚动文件日志库，核心滚动写入器是框架无关的 `io::Write` 实现，可对接 [`tracing`](https://docs.rs/tracing)、[`log`](https://docs.rs/log) 与 [`slog`](https://docs.rs/slog) 三大主流日志门面。
+A production-grade rolling file logger. Its core rolling writer is a
+facade-agnostic `io::Write` implementation that can target the three mainstream
+logging facades: [`tracing`](https://docs.rs/tracing), [`log`](https://docs.rs/log)
+and [`slog`](https://docs.rs/slog).
 
-## 特性
+> 中文文档见 [README.zh-CN.md](README.zh-CN.md) · See [README.zh-CN.md](README.zh-CN.md) for the Chinese version.
 
-- **按日期 + 按大小双重滚动**：文件名形如 `{prefix}.{YYYY-MM-DD}.log`，大小超限时追加序号 `{seq}`。
-- **历史日志自动 gzip 压缩归档**到 `history/` 目录：异步、限并发、原子写、崩溃安全。
-- **归档等待天数可配置**：负数 = 滚动即归档；`0` = 昨天及更早归档；`1` = 前天及更早归档，依此类推。
-- **可配置日志时区**（IANA 名，如 `"UTC"` / `"Asia/Shanghai"`），支持跨时区部署。
-- **可选 fsync 强持久化**：`flush` 时强制落盘，崩溃不丢日志。
-- **丢日志计数监控**：非阻塞写入因 channel 满而丢弃的行数可查询。
-- **优雅关闭**：`LoggerGuard` drop 时自动 flush 缓冲区并等待归档线程完成。
-- **同时输出控制台与文件**：控制台带 ANSI 颜色，文件为纯文本。
-- **门面无关日志宏**：`trace!` / `debug!` / `info!` / `warn!` / `error!` 五个宏，按启用的门面自动代理，代码无需关心底层是 `tracing` 还是 `log`。
+## Features
 
-## 安装
+- **Date + size dual rotation**: filenames like `{prefix}.{YYYY-MM-DD}.log`, with
+  a `{seq}` suffix when the size limit is exceeded.
+- **Automatic gzip archival** of historical logs into `history/`: async,
+  concurrency-limited, atomic, crash-safe.
+- **Configurable archive delay in days**: negative = archive on rotation; `0` =
+  archive yesterday and earlier; `1` = archive the day before yesterday and earlier.
+- **Configurable log timezone** (IANA name, e.g. `"UTC"` / `"Asia/Shanghai"`),
+  for cross-timezone deployment.
+- **Optional fsync durability**: force flush to disk on `flush`, no log loss on crash.
+- **Dropped-line monitoring**: query the number of lines dropped when the channel is full.
+- **Graceful shutdown**: `LoggerGuard` flushes buffers and waits for archiver
+  threads on drop.
+- **Console + file output**: colored console, plain-text file.
+- **Facade-agnostic macros**: `trace!` / `debug!` / `info!` / `warn!` / `error!`
+  proxy to the enabled facade automatically — code doesn't care whether it's
+  `tracing` or `log` underneath.
 
-在 `Cargo.toml` 中添加：
+## Installation
+
+Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
 rolling-logger = "0.1"
 ```
 
-## 门面支持（feature）
+## Facade support (features)
 
-| feature | 默认 | 底层门面 |
+| feature | default | underlying facade |
 | --- | --- | --- |
-| `tracing` | ✅ | [`tracing`](https://docs.rs/tracing)（`tracing-subscriber`） |
+| `tracing` | ✅ | [`tracing`](https://docs.rs/tracing) (`tracing-subscriber`) |
 | `log-backend` | ❌ | [`log`](https://docs.rs/log) |
 | `slog-backend` | ❌ | [`slog`](https://docs.rs/slog) |
 
-三个门面**互斥**，只能启用其一（同时启用会在编译期报错）。核心滚动写入器
-`RollingFileWriter` 是框架无关的 `io::Write`，三个门面复用同一套滚动/归档能力。
+The three facades are **mutually exclusive** (enabling more than one fails
+compilation). The core writer `RollingFileWriter` is a facade-agnostic
+`io::Write`, shared by all three facades for the same rolling/archival capability.
 
-无论选择哪个门面，初始化都调用同一个入口 `init`：
+Regardless of the facade, initialization always uses the single `init` entry:
 
 ```rust
 use rolling_logger::{init, LogConfig};
@@ -43,7 +56,7 @@ let config = LogConfig { /* ... */ };
 let _guard = init(&config)?;
 ```
 
-## 快速开始
+## Quick start
 
 ```rust
 use rolling_logger::{init, LogConfig};
@@ -61,7 +74,7 @@ fn main() -> anyhow::Result<()> {
         timezone: "UTC".into(),
     };
 
-    // 统一的初始化入口，底层门面由 feature 决定（默认 tracing）
+    // Unified init entry; the facade is decided by the feature (tracing by default).
     let _guard = init(&config)?;
 
     tracing::info!("hello, rolling-logger!");
@@ -71,7 +84,7 @@ fn main() -> anyhow::Result<()> {
 }
 ```
 
-对接 `log` 门面（禁用默认 tracing）：
+Targeting the `log` facade (disable the default tracing):
 
 ```toml
 [dependencies]
@@ -86,7 +99,7 @@ let _guard = init(&config)?;
 log::info!("hello via log facade");
 ```
 
-对接 `slog` 门面（禁用默认 tracing）：
+Targeting the `slog` facade (disable the default tracing):
 
 ```toml
 [dependencies]
@@ -98,104 +111,109 @@ use rolling_logger::{init, LogConfig};
 
 let config = LogConfig { /* ... */ };
 let guard = init(&config)?;
-let log = guard.logger();   // slog 宏需显式传入 logger
+let log = guard.logger();   // slog macros need an explicit logger
 slog::info!(log, "hello via slog"; "user_id" => 42);
 ```
 
-完整的可运行示例见 [`examples/tracing.rs`](examples/tracing.rs)（tracing 门面）、[`examples/log.rs`](examples/log.rs)（log 门面）与 [`examples/slog.rs`](examples/slog.rs)（slog 门面）。
+Runnable examples: [`examples/tracing.rs`](examples/tracing.rs) (tracing facade),
+[`examples/log.rs`](examples/log.rs) (log facade) and
+[`examples/slog.rs`](examples/slog.rs) (slog facade).
 
-## 门面无关日志宏
+## Facade-agnostic macros
 
-本 crate 提供 5 个门面无关宏，按编译期启用的 feature 自动代理到对应门面，
-业务代码无需关心底层是 `tracing` 还是 `log`：
+This crate provides five facade-agnostic macros that proxy to the enabled facade
+at compile time, so business code doesn't care whether it's `tracing` or `log`:
 
 ```rust
 use rolling_logger::{debug, error, info, trace, warn};
 
-trace!("trace 级别");
-debug!("debug 级别，变量值 {}", x);
-info!("info 级别");
-warn!("warn 级别");
-error!("error 级别");
+trace!("trace level");
+debug!("debug level, value {}", x);
+info!("info level");
+warn!("warn level");
+error!("error level");
 
-// 也支持 target 语法（两个门面的公共子集）
-info!(target: "my_component", "带 target 的日志");
+// The target syntax is also supported (common subset of the two facades).
+info!(target: "my_component", "a log line with a target");
 ```
 
-代理规则：
+Proxy rules:
 
-| 启用 feature | 宏代理到 |
+| enabled feature | macros proxy to |
 | --- | --- |
-| `tracing`（默认） | `tracing::trace!` 等 |
-| `log-backend` | `log::trace!` 等 |
-| `slog-backend` / 无门面 | no-op（参数不求值、零开销） |
+| `tracing` (default) | `tracing::trace!` etc. |
+| `log-backend` | `log::trace!` etc. |
+| `slog-backend` / none | no-op (args not evaluated, zero cost) |
 
-> **边界 1**：门面无关宏只支持 `tracing` / `log` 两个门面的**公共子集**语法
-> （`info!("msg {}", x)` 与 `info!(target: "...", ...)`）。`tracing` 特有的结构化
-> 字段语法（如 `info!(field = v, "msg")`）需直接使用 `tracing::info!`。
+> **Boundary 1**: the facade-agnostic macros only support the **common subset**
+> syntax of `tracing` / `log` (`info!("msg {}", x)` and `info!(target: "...", ...)`).
+> For `tracing`-specific structured fields (e.g. `info!(field = v, "msg")`), use
+> `tracing::info!` directly.
 >
-> **边界 2**：`slog` 门面**不纳入**门面无关宏体系。slog 的宏需显式传入 logger
-> 实例，且消息采用 `; key => value` 结构化语法（不支持 `{}` 位置参数），与
-> `tracing`/`log` 的语法不兼容。slog 门面下请直接使用 slog 原生宏。
+> **Boundary 2**: the `slog` facade is **not** part of the facade-agnostic macro
+> layer. slog macros need an explicit logger and use `; key => value` structured
+> syntax (no `{}` positional args), which is incompatible with `tracing`/`log`.
+> Use slog's native macros directly under the slog facade.
 
-## 配置说明
+## Configuration
 
-| 字段 | 类型 | 默认值 | 说明 |
+| field | type | default | description |
 | --- | --- | --- | --- |
-| `dir` | `String` | — | 日志文件存储目录 |
-| `level` | `String` | — | 日志级别过滤规则，如 `"info,my_crate=debug"` |
-| `file_prefix` | `String` | — | 日志文件名前缀 |
-| `max_file_size_mb` | `u64` | — | 单个日志文件最大大小（MB） |
-| `max_files` | `usize` | — | 最多保留多少个归档文件（`0` 不限制） |
-| `archive_delay_days` | `i64` | `0` | 归档等待天数，负数 = 滚动即归档 |
-| `archive_batch_size` | `usize` | `100` | 单次归档最多处理文件数 |
-| `fsync_on_flush` | `bool` | `false` | flush 时是否强制 fsync 落盘 |
-| `timezone` | `String` | `"UTC"` | 日志时间戳时区（IANA 名） |
+| `dir` | `String` | — | Directory where log files are stored. |
+| `level` | `String` | — | Log level filter rule, e.g. `"info,my_crate=debug"`. |
+| `file_prefix` | `String` | — | Log filename prefix. |
+| `max_file_size_mb` | `u64` | — | Max size of a single log file (MB). |
+| `max_files` | `usize` | — | Max archived files to retain (`0` = unlimited). |
+| `archive_delay_days` | `i64` | `0` | Archive delay in days; negative = archive on rotation. |
+| `archive_batch_size` | `usize` | `100` | Max files to archive per pass. |
+| `fsync_on_flush` | `bool` | `false` | Whether to force fsync on flush. |
+| `timezone` | `String` | `"UTC"` | Timezone for log timestamps (IANA name). |
 
-## 目录结构
+## Directory layout
 
 ```
 logs/
-├── app.2026-08-28.log          # 历史日志（归档后移至 history/）
-├── app.2026-08-29.log          # 当前日志
+├── app.2026-08-28.log          # historical log (moved to history/ after archiving)
+├── app.2026-08-29.log          # current log
 └── history/
-    ├── app.2026-08-28.log.gz   # 压缩归档
+    ├── app.2026-08-28.log.gz   # compressed archive
     └── ...
 ```
 
-## 高级用法
+## Advanced usage
 
-### 自定义日志级别过滤
+### Custom level filtering
 
-`level` 字段在 `tracing` 门面下遵循 `tracing_subscriber::EnvFilter` 语法：
+Under the `tracing` facade, `level` follows `tracing_subscriber::EnvFilter` syntax:
 
 ```rust
 let config = LogConfig {
     level: "info,my_app=debug,hyper=warn".into(),
-    // ...其余字段
+    // ...other fields
 };
 ```
 
-> 在 `log` / `slog` 门面下，它们只支持单一全局级别，会取 `level` 的第一个 token
-> （如上例中的 `"info"`），后续的 per-target 规则被忽略。
+> Under the `log` / `slog` facades, only a single global level is supported; the
+> first token of `level` is taken (e.g. `"info"` above), and per-target rules are
+> ignored.
 
-### 监控丢日志
+### Monitor dropped lines
 
 ```rust
 let guard = init(&config)?;
-// ...运行一段时间后
+// ...after running for a while
 eprintln!("dropped file lines: {}", guard.dropped_file_lines());
 ```
 
-> 仅 `tracing` 门面提供 `dropped_file_lines()`（`log` / `slog` 门面是同步写入，
-> 无丢日志通道）。
+> Only the `tracing` facade provides `dropped_file_lines()` (the `log` / `slog`
+> facades write synchronously and have no drop channel).
 
-### 手动解析时区
+### Parse a timezone manually
 
 ```rust
 use rolling_logger::parse_timezone;
 
-let tz = parse_timezone("Asia/Shanghai"); // 失败回退 UTC
+let tz = parse_timezone("Asia/Shanghai"); // falls back to UTC on failure
 ```
 
 ## License

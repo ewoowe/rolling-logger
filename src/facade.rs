@@ -1,25 +1,29 @@
-//! 门面无关的日志宏抽象层。
+//! Facade-agnostic logging macro abstraction layer.
 //!
-//! 提供 [`trace!`] / [`debug!`] / [`info!`] / [`warn!`] / [`error!`] 五个等级宏，
-//! 根据编译期启用的 feature 代理到对应门面（`tracing` 或 `log`）。
+//! Provides five level macros: [`trace!`], [`debug!`], [`info!`], [`warn!`],
+//! [`error!`], which proxy to the corresponding facade (`tracing` or `log`)
+//! based on the feature enabled at compile time.
 //!
-//! 这些宏既可供下游调用方直接使用（`use rolling_logger::info;`），也用于本
-//! crate 内部（如滚动/归档的自诊断，见 `writer.rs`）。
+//! These macros are usable both by downstream callers (`use rolling_logger::info;`)
+//! and internally by this crate (e.g. self-diagnostics in `writer.rs`).
 //!
-//! # 代理规则
+//! # Proxy rules
 //!
-//! - 启用 `tracing`（默认）→ 代理到 [`tracing`] 的对应宏
-//! - 启用 `log-backend` → 代理到 [`log`] 的对应宏
-//! - 未启用任何门面 → 降级为 no-op（完全惰性：参数不求值、零开销）
+//! - `tracing` enabled (default) → proxies to the corresponding [`tracing`] macros.
+//! - `log-backend` enabled → proxies to the corresponding [`log`] macros.
+//! - `slog-backend` or no facade enabled → degrades to no-op (fully lazy: args
+//!   not evaluated, zero cost), because slog's syntax is incompatible with this
+//!   macro layer.
 //!
-//! 仅支持两个门面的**公共子集**语法：`info!("msg {}", x)` 与
-//! `info!(target: "...", "msg {}", x)`。tracing 特有的结构化字段语法
-//! （如 `info!(field = v, "msg")`）不在门面无关范围内，需要时请直接使用
-//! `tracing::info!`。
+//! Only the **common subset** syntax of the two facades is supported:
+//! `info!("msg {}", x)` and `info!(target: "...", "msg {}", x)`. The structured
+//! field syntax specific to `tracing` (e.g. `info!(field = v, "msg")`) is out of
+//! scope here; use `tracing::info!` directly when needed.
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 门面宏 re-export：把当前门面的 5 个等级宏以同名 re-export 到本模块，
-// 供下面的对外宏通过 `$crate::facade::<name>!` 转发（保证宏卫生）。
+// Facade macro re-export: re-export the current facade's five level macros into
+// this module under the same names, so the public macros below can forward to
+// them via `$crate::facade::<name>!` (ensuring macro hygiene).
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg(feature = "tracing")]
@@ -31,11 +35,12 @@ pub use tracing::{debug, error, info, trace, warn};
 pub use log::{debug, error, info, trace, warn};
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 对外宏（门面无关）
+// Public macros (facade-agnostic)
 //
-// 有门面时转发到上面的 re-export；无门面时降级为 no-op。
-// 注意：`#[cfg]` 不能出现在 `macro_rules!` 宏体内部，因此每个等级写「有门面」/
-// 「无门面」两个版本，用 `#[cfg]` 控制哪一个生效。
+// When a facade is enabled, forward to the re-exports above; when no facade is
+// enabled, degrade to no-op. Note: `#[cfg]` cannot appear inside a `macro_rules!`
+// body (cfg is evaluated before macro expansion), so each level defines two
+// versions ("facade enabled" / "no facade") selected by `#[cfg]`.
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg(any(feature = "tracing", feature = "log-backend"))]

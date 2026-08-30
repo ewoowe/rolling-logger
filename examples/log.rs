@@ -1,12 +1,14 @@
-//! 对接 `log` 门面的示例。
+//! Example targeting the `log` facade.
 //!
-//! 运行方式（需启用 log-backend feature，并禁用默认 tracing）：
+//! Run with (enables log-backend and disables the default tracing):
 //! ```sh
 //! cargo run --example log --no-default-features --features log-backend
 //! ```
 //!
-//! 注意：本示例与 `tracing.rs` 使用**完全相同**的门面无关日志宏，只是编译时切换了
-//! feature。这体现了门面无关宏的价值——业务日志代码不依赖具体门面。
+//! Note: this example uses the **exact same** facade-agnostic macros as
+//! `tracing.rs`; only the compiled feature differs. This demonstrates the value
+//! of the facade-agnostic macros — business logging code does not depend on a
+//! specific facade.
 
 use rolling_logger::{debug, error, info, init, trace, warn, LogConfig};
 
@@ -23,19 +25,20 @@ fn main() -> anyhow::Result<()> {
         timezone: "UTC".into(),
     };
 
-    // 统一的初始化入口：启用 log-backend（且未启用 tracing）时底层为 log 门面
+    // Unified init entry: with log-backend enabled (and tracing disabled), the
+    // underlying facade is `log`.
     let _guard = init(&config)?;
 
-    // 门面无关日志宏：在本示例（log 门面）下代理到 log::*!，
-    // 无需引入 `log` crate 直接依赖（宏内部通过 $crate 定位门面）。
-    trace!("trace 级别（被 info 过滤）");
-    debug!("debug 级别（被 info 过滤）");
+    // Facade-agnostic macros: proxy to log::*! in this example, without a direct
+    // dependency on the `log` crate (macros locate the facade via $crate).
+    trace!("trace level (filtered by info)");
+    debug!("debug level (filtered by info)");
     info!("hello, log backend!");
     warn!("warning via log backend");
     error!("error via log backend");
 
-    // 门面无关宏也支持 target 语法
-    info!(target: "my_component", "带 target 的日志");
+    // The facade-agnostic macros also support the target syntax.
+    info!(target: "my_component", "a log line with a target");
 
     Ok(())
 }

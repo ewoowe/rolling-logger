@@ -1,8 +1,9 @@
-# rust-analyzer 配置
+# rust-analyzer configuration
 #
-# 本项目三个门面 feature（tracing / log-backend / slog-backend）互斥，
-# 同时启用会触发 facade.rs 里宏重复定义的 E0252 错误，导致 IDE 连锁报错。
-# 因此这里固定使用默认的 tracing 门面做静态分析。
+# The three facade features (tracing / log-backend / slog-backend) are mutually
+# exclusive; enabling all of them triggers an E0252 duplicate-definition error in
+# facade.rs, which cascades into misleading IDE errors. So pin static analysis to
+# the default tracing facade here.
 [cargo]
 allFeatures = false
 features = ["tracing"]

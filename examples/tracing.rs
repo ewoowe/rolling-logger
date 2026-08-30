@@ -1,6 +1,6 @@
-//! 滚动文件日志库的 tracing 门面示例（默认 feature）。
+//! Rolling file logger example using the tracing facade (default feature).
 //!
-//! 运行方式：
+//! Run with:
 //! ```sh
 //! cargo run --example tracing
 //! ```
@@ -20,26 +20,27 @@ fn main() -> anyhow::Result<()> {
         timezone: "UTC".into(),
     };
 
-    // 统一的初始化入口：底层门面由编译期 feature 决定（默认 tracing）。
-    // 返回的 guard 必须保持存活到程序退出，否则非阻塞写入缓冲中的日志会在 drop 前被丢弃。
+    // Unified init entry: the facade is decided at compile time by the feature
+    // (tracing by default). The returned guard must stay alive until exit,
+    // otherwise buffered logs in the non-blocking writer would be lost on drop.
     let guard = init(&config)?;
 
-    // 门面无关日志宏：在本示例（tracing 门面）下代理到 tracing::*!。
-    // 若改用 log 门面（--no-default-features --features log-backend），
-    // 这些宏会代理到 log::*!，业务代码无需任何改动（见 log.rs）。
-    trace!("trace 级别（被 info 过滤）");
-    debug!("debug 级别（被 info 过滤）");
+    // Facade-agnostic macros: proxy to tracing::*! in this example. If you switch
+    // to the log facade (--no-default-features --features log-backend), they proxy
+    // to log::*! with zero code changes (see log.rs).
+    trace!("trace level (filtered by info)");
+    debug!("debug level (filtered by info)");
     info!("hello, rolling-logger!");
     warn!("warning goes to both console and file");
     error!("error also goes to both");
 
-    // 门面无关宏也支持 target 语法（两个门面的公共子集）
-    info!(target: "my_component", "带 target 的日志");
+    // The facade-agnostic macros also support the target syntax (common subset).
+    info!(target: "my_component", "a log line with a target");
 
-    // 需要 tracing 特有功能（如结构化字段）时，直接使用原生宏即可
-    tracing::info!(answer = 42, "tracing 结构化字段示例");
+    // For tracing-specific features (e.g. structured fields), use native macros.
+    tracing::info!(answer = 42, "tracing structured fields example");
 
-    // 查询文件日志因 channel 满而被丢弃的行数（仅 tracing 门面提供）
+    // Number of file lines dropped because the channel was full (tracing only).
     let _dropped = guard.dropped_file_lines();
 
     Ok(())
