@@ -14,7 +14,7 @@
 - **丢日志计数监控**：非阻塞写入因 channel 满而丢弃的行数可查询。
 - **优雅关闭**：`LoggerGuard` drop 时自动 flush 缓冲区并等待归档线程完成。
 - **同时输出控制台与文件**：控制台带 ANSI 颜色，文件为纯文本。
-- **门面无关日志宏**：`trace!` / `debug!` / `info!` / `warn!` / `error!` 五个宏，按启用的门面自动代理，代码无需关心底层是 `tracing` 还是 `log`。
+- **门面无关日志宏**：`trace!` / `debug!` / `info!` / `warn!` / `error!` 五个宏，按启用的门面自动代理，跨 `tracing`、`log`、`slog` 三门面业务代码保持一致。
 
 ## 安装
 
@@ -22,7 +22,7 @@
 
 ```toml
 [dependencies]
-rolling-logger = "0.1"
+rolling-logger = "0.3"
 ```
 
 ## 门面支持（feature）
@@ -77,7 +77,7 @@ fn main() -> anyhow::Result<()> {
 
 ```toml
 [dependencies]
-rolling-logger = { version = "0.1", default-features = false, features = ["log-backend"] }
+rolling-logger = { version = "0.3", default-features = false, features = ["log-backend"] }
 ```
 
 ```rust
@@ -92,7 +92,7 @@ log::info!("hello via log facade");
 
 ```toml
 [dependencies]
-rolling-logger = { version = "0.1", default-features = false, features = ["slog-backend"] }
+rolling-logger = { version = "0.3", default-features = false, features = ["slog-backend"] }
 ```
 
 ```rust
@@ -109,7 +109,7 @@ slog::info!(log, "hello via slog"; "user_id" => 42);
 ## 门面无关日志宏
 
 本 crate 提供 5 个门面无关宏，按编译期启用的 feature 自动代理到对应门面，
-业务代码无需关心底层是 `tracing` 还是 `log`：
+跨 `tracing`、`log`、`slog` 三门面业务代码保持一致：
 
 ```rust
 use rolling_logger::{debug, error, info, trace, warn};
@@ -119,9 +119,6 @@ debug!("debug 级别，变量值 {}", x);
 info!("info 级别");
 warn!("warn 级别");
 error!("error 级别");
-
-// 也支持 target 语法（两个门面的公共子集）
-info!(target: "my_component", "带 target 的日志");
 ```
 
 代理规则：
@@ -130,15 +127,34 @@ info!(target: "my_component", "带 target 的日志");
 | --- | --- |
 | `tracing`（默认） | `tracing::trace!` 等 |
 | `log-backend` | `log::trace!` 等 |
-| `slog-backend` / 无门面 | no-op（参数不求值、零开销） |
+| `slog-backend` | `slog::trace!` 等（自动注入全局 logger） |
+| 无门面 | no-op（参数不求值、零开销） |
 
-> **边界 1**：门面无关宏只支持 `tracing` / `log` 两个门面的**公共子集**语法
-> （`info!("msg {}", x)` 与 `info!(target: "...", ...)`）。`tracing` 特有的结构化
-> 字段语法（如 `info!(field = v, "msg")`）需直接使用 `tracing::info!`。
+### 门面原生宏
+
+门面无关宏与各门面自身的原生宏可在同一程序中并存。需要用到门面特有功能时，
+直接使用门面原生 API：
+
+```rust
+// tracing —— 结构化字段和 span
+tracing::info!(answer = 42, "结构化字段");
+tracing::warn!(code = 1001, "带字段的警告");
+
+// log —— 普通位置参数
+log::info!("hello via log");
+log::warn!(target: "my_component", "带 target 的警告");
+
+// slog —— 结构化 key-value（需显式传入 logger）
+let log = guard.logger();
+slog::info!(log, "hello via slog"; "user_id" => 42);
+```
+
+> **边界**：门面无关宏只支持**公共子集**语法——位置参数（`info!("msg {}", x)`）。
+> 各门面特有的语法需使用原生宏：
+> - `tracing` 结构化字段：`tracing::info!(field = v, "msg")`
+> - `slog` 结构化 key-value：`slog::info!(logger, "msg"; "k" => v)`
 >
-> **边界 2**：`slog` 门面**不纳入**门面无关宏体系。slog 的宏需显式传入 logger
-> 实例，且消息采用 `; key => value` 结构化语法（不支持 `{}` 位置参数），与
-> `tracing`/`log` 的语法不兼容。slog 门面下请直接使用 slog 原生宏。
+> （`target:` 语法在 `tracing` / `log` 下可用，但 `slog` 下不支持。）
 
 ## 配置说明
 

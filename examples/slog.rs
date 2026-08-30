@@ -32,17 +32,20 @@ fn main() -> anyhow::Result<()> {
     // Obtain the slog Logger from the guard (cheap Arc clone).
     let log = guard.logger();
 
-    // Native slog macros: message + structured key-values.
-    slog::info!(log, "hello, slog backend!");
+    // ── 1. Native slog macros ─────────────────────────────────────────────────
+    // Use slog's native API directly for structured key-values (requires an
+    // explicit logger argument).
+    slog::info!(log, "hello via native slog macro!");
     slog::debug!(log, "this line is hidden by level filter 'info'");
-    slog::warn!(log, "warning via slog"; "code" => 1001);
-    slog::error!(log, "error via slog"; "user_id" => 42, "action" => "login");
+    slog::warn!(log, "native warning via slog"; "code" => 1001);
+    slog::error!(log, "native error via slog"; "user_id" => 42, "action" => "login");
 
-    // Facade-agnostic macros: same positional-argument syntax as log/tracing,
-    // auto-injecting the global logger registered by `init`.
-    rolling_logger::info!("facade info: hello {}", "world");
-    rolling_logger::warn!("facade warn: code {}", 1001);
-    rolling_logger::error!("facade error: user {}", 42);
+    // ── 2. Facade-agnostic macros ─────────────────────────────────────────────
+    // Same positional-argument syntax as log/tracing, auto-injecting the global
+    // logger registered by `init`.
+    rolling_logger::info!("hello via facade-agnostic macro!");
+    rolling_logger::warn!("warning via facade-agnostic macro: code {}", 1001);
+    rolling_logger::error!("error via facade-agnostic macro: user {}", 42);
 
     Ok(())
 }

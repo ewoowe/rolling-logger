@@ -23,8 +23,8 @@ and [`slog`](https://docs.rs/slog).
   threads on drop.
 - **Console + file output**: colored console, plain-text file.
 - **Facade-agnostic macros**: `trace!` / `debug!` / `info!` / `warn!` / `error!`
-  proxy to the enabled facade automatically — code doesn't care whether it's
-  `tracing` or `log` underneath.
+  proxy to the enabled facade automatically across `tracing`, `log` and `slog` —
+  business code stays the same regardless of the underlying facade.
 
 ## Installation
 
@@ -32,7 +32,7 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-rolling-logger = "0.1"
+rolling-logger = "0.3"
 ```
 
 ## Facade support (features)
@@ -88,7 +88,7 @@ Targeting the `log` facade (disable the default tracing):
 
 ```toml
 [dependencies]
-rolling-logger = { version = "0.1", default-features = false, features = ["log-backend"] }
+rolling-logger = { version = "0.3", default-features = false, features = ["log-backend"] }
 ```
 
 ```rust
@@ -103,7 +103,7 @@ Targeting the `slog` facade (disable the default tracing):
 
 ```toml
 [dependencies]
-rolling-logger = { version = "0.1", default-features = false, features = ["slog-backend"] }
+rolling-logger = { version = "0.3", default-features = false, features = ["slog-backend"] }
 ```
 
 ```rust
@@ -122,7 +122,7 @@ Runnable examples: [`examples/tracing.rs`](examples/tracing.rs) (tracing facade)
 ## Facade-agnostic macros
 
 This crate provides five facade-agnostic macros that proxy to the enabled facade
-at compile time, so business code doesn't care whether it's `tracing` or `log`:
+at compile time, so business code stays the same across `tracing`, `log` and `slog`:
 
 ```rust
 use rolling_logger::{debug, error, info, trace, warn};
@@ -132,9 +132,6 @@ debug!("debug level, value {}", x);
 info!("info level");
 warn!("warn level");
 error!("error level");
-
-// The target syntax is also supported (common subset of the two facades).
-info!(target: "my_component", "a log line with a target");
 ```
 
 Proxy rules:
@@ -143,17 +140,36 @@ Proxy rules:
 | --- | --- |
 | `tracing` (default) | `tracing::trace!` etc. |
 | `log-backend` | `log::trace!` etc. |
-| `slog-backend` / none | no-op (args not evaluated, zero cost) |
+| `slog-backend` | `slog::trace!` etc. (auto-injects the global logger) |
+| none | no-op (args not evaluated, zero cost) |
 
-> **Boundary 1**: the facade-agnostic macros only support the **common subset**
-> syntax of `tracing` / `log` (`info!("msg {}", x)` and `info!(target: "...", ...)`).
-> For `tracing`-specific structured fields (e.g. `info!(field = v, "msg")`), use
-> `tracing::info!` directly.
+### Native facade macros
+
+The facade-agnostic macros and each facade's own native macros can coexist in the
+same program. Use the facade's native API directly when you need facade-specific
+features:
+
+```rust
+// tracing — structured fields and spans
+tracing::info!(answer = 42, "structured field");
+tracing::warn!(code = 1001, "warning with a field");
+
+// log — plain positional arguments
+log::info!("hello via log");
+log::warn!(target: "my_component", "warning with a target");
+
+// slog — structured key-values (requires an explicit logger)
+let log = guard.logger();
+slog::info!(log, "hello via slog"; "user_id" => 42);
+```
+
+> **Boundary**: the facade-agnostic macros only support the **common subset**
+> syntax — positional arguments (`info!("msg {}", x)`). Facade-specific syntax
+> is out of scope and requires native macros:
+> - `tracing` structured fields: `tracing::info!(field = v, "msg")`
+> - `slog` structured key-values: `slog::info!(logger, "msg"; "k" => v)`
 >
-> **Boundary 2**: the `slog` facade is **not** part of the facade-agnostic macro
-> layer. slog macros need an explicit logger and use `; key => value` structured
-> syntax (no `{}` positional args), which is incompatible with `tracing`/`log`.
-> Use slog's native macros directly under the slog facade.
+> (The `target:` syntax works under `tracing` and `log`, but not `slog`.)
 
 ## Configuration
 

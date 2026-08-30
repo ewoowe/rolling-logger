@@ -29,16 +29,22 @@ fn main() -> anyhow::Result<()> {
     // underlying facade is `log`.
     let _guard = init(&config)?;
 
-    // Facade-agnostic macros: proxy to log::*! in this example, without a direct
-    // dependency on the `log` crate (macros locate the facade via $crate).
+    // ── 1. Facade-agnostic macros ─────────────────────────────────────────────
+    // These proxy to log::*! in this example, without a direct dependency on the
+    // `log` crate (the macros locate the facade via $crate).
     trace!("trace level (filtered by info)");
     debug!("debug level (filtered by info)");
-    info!("hello, log backend!");
-    warn!("warning via log backend");
-    error!("error via log backend");
+    info!("hello via facade-agnostic macro!");
+    warn!("warning via facade-agnostic macro");
+    error!("error via facade-agnostic macro");
 
-    // The facade-agnostic macros also support the target syntax.
-    info!(target: "my_component", "a log line with a target");
+    // ── 2. Native log macros ──────────────────────────────────────────────────
+    // Use log's native API directly when you want to bypass the facade-agnostic
+    // layer. The `log` crate is available because log-backend enables it.
+    log::info!("hello via native log macro!");
+    log::warn!("native warning via log crate");
+    log::error!("native error via log crate");
+    log::info!(target: "my_component", "native log with a target");
 
     Ok(())
 }

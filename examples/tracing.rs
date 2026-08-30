@@ -25,20 +25,22 @@ fn main() -> anyhow::Result<()> {
     // otherwise buffered logs in the non-blocking writer would be lost on drop.
     let guard = init(&config)?;
 
-    // Facade-agnostic macros: proxy to tracing::*! in this example. If you switch
-    // to the log facade (--no-default-features --features log-backend), they proxy
-    // to log::*! with zero code changes (see log.rs).
+    // ── 1. Facade-agnostic macros ─────────────────────────────────────────────
+    // These proxy to tracing::*! in this example. Switch the feature to log or
+    // slog and the exact same code keeps working (see log.rs / slog.rs).
     trace!("trace level (filtered by info)");
     debug!("debug level (filtered by info)");
-    info!("hello, rolling-logger!");
-    warn!("warning goes to both console and file");
-    error!("error also goes to both");
+    info!("hello via facade-agnostic macro!");
+    warn!("warning via facade-agnostic macro");
+    error!("error via facade-agnostic macro");
 
-    // The facade-agnostic macros also support the target syntax (common subset).
-    info!(target: "my_component", "a log line with a target");
-
-    // For tracing-specific features (e.g. structured fields), use native macros.
-    tracing::info!(answer = 42, "tracing structured fields example");
+    // ── 2. Native tracing macros ──────────────────────────────────────────────
+    // Use tracing's native API directly when you need tracing-specific features
+    // such as structured fields or spans.
+    tracing::info!("hello via native tracing macro!");
+    tracing::warn!(code = 1001, "native warning with a structured field");
+    tracing::error!(user_id = 42, action = "login", "native error with fields");
+    tracing::info!(answer = 42, "structured fields example");
 
     // Number of file lines dropped because the channel was full (tracing only).
     let _dropped = guard.dropped_file_lines();
