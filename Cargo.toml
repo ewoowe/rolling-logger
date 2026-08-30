@@ -15,7 +15,7 @@ name = "rolling_logger"
 path = "src/lib.rs"
 
 [features]
-default = ["slog-backend"]
+default = ["tracing"]
 # tracing 门面集成（init_logger / LoggerGuards）
 tracing = ["dep:tracing-subscriber", "dep:tracing-appender"]
 # log 门面集成（init_log_logger）

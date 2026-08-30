@@ -144,20 +144,17 @@ fn parse_level(level: &str) -> slog::Level {
 
 /// 初始化 slog 门面日志系统
 ///
-/// 返回 [`slog::Logger`]，调用方直接持有并传给 slog 宏：
+/// 返回 [`crate::LoggerGuard`]，通过 [`LoggerGuard::logger`](crate::LoggerGuard::logger)
+/// 获取 `slog::Logger` 传给 slog 宏：
 ///
 /// ```ignore
-/// let log = init_slog_logger(&config)?;
+/// let guard = init_slog_logger(&config)?;
+/// let log = guard.logger();
 /// slog::info!(log, "hello"; "user_id" => 42);
 /// ```
 ///
-/// 说明：
-/// - slog 不是全局单例模型（宏需显式传 logger），因此本函数返回 logger 本身；
-/// - 推荐通过统一入口 [`init`](crate::init) 初始化，再用
-///   [`LoggerGuard::logger`](crate::LoggerGuard::logger) 获取 logger，以便
-///   guard 在 drop 时优雅关闭归档线程。若直接使用本函数，需自行调用
-///   [`shutdown_archivers`](crate::shutdown_archivers)。
-pub fn init_slog_logger(config: &LogConfig) -> anyhow::Result<slog::Logger> {
+/// guard 必须保持存活到程序结束，drop 时优雅关闭归档线程。
+pub fn init_slog_logger(config: &LogConfig) -> anyhow::Result<crate::LoggerGuard> {
     let tz = parse_timezone(&config.timezone);
     let writer = RollingFileWriter::new(
         &config.dir,
@@ -178,5 +175,5 @@ pub fn init_slog_logger(config: &LogConfig) -> anyhow::Result<slog::Logger> {
 
     // Logger::root 要求 Drain 的 Err = Never、Ok = ()，我们的 RollingDrain 直接满足
     let logger = slog::Logger::root(drain, slog::o!());
-    Ok(logger)
+    Ok(crate::LoggerGuard { slog: logger })
 }

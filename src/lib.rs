@@ -84,7 +84,7 @@ mod slog_layer;
 pub use config::LogConfig;
 pub use writer::{parse_timezone, shutdown_archivers, RollingFileWriter};
 #[cfg(feature = "tracing")]
-pub use tracing_layer::{init_logger, LoggerGuards};
+pub use tracing_layer::init_logger;
 #[cfg(feature = "log-backend")]
 pub use log_layer::init_log_logger;
 #[cfg(feature = "slog-backend")]
@@ -97,7 +97,7 @@ pub use slog_layer::init_slog_logger;
 /// - 任一门面下，drop 时都会优雅关闭归档线程。
 pub struct LoggerGuard {
     #[cfg(feature = "tracing")]
-    tracing: LoggerGuards,
+    tracing: tracing_layer::LoggerGuards,
     #[cfg(feature = "slog-backend")]
     slog: slog::Logger,
 }
@@ -130,22 +130,18 @@ impl LoggerGuard {
 pub fn init(config: &LogConfig) -> anyhow::Result<LoggerGuard> {
     // 三个门面 feature 由顶部的 compile_error! 保证互斥（最多启用其一），
     // 因此每个分支只需单一 `#[cfg(feature = "...")]`，无需 not(...) 组合条件。
+    // 三个底层原语均已返回 LoggerGuard，这里直接透传。
     #[cfg(feature = "tracing")]
     {
-        Ok(LoggerGuard {
-            tracing: init_logger(config)?,
-        })
+        init_logger(config)
     }
     #[cfg(feature = "log-backend")]
     {
-        init_log_logger(config)?;
-        Ok(LoggerGuard {})
+        init_log_logger(config)
     }
     #[cfg(feature = "slog-backend")]
     {
-        Ok(LoggerGuard {
-            slog: init_slog_logger(config)?,
-        })
+        init_slog_logger(config)
     }
     #[cfg(not(any(feature = "tracing", feature = "log-backend", feature = "slog-backend")))]
     {

@@ -25,16 +25,17 @@ impl FormatTime for TzTimer {
     }
 }
 
-/// 日志系统守卫，持有控制台和文件两个非阻塞写入器的 guard。
+/// tracing 门面的内部守卫，持有控制台和文件两个非阻塞写入器的 guard。
 ///
-/// 在 drop 时会 flush 缓冲区，因此必须在程序生命周期内保持存活。
-pub struct LoggerGuards {
+/// 仅供 [`crate::LoggerGuard`] 内部持有；在 drop 时会 flush 缓冲区。
+/// 不对外暴露——统一由 [`crate::LoggerGuard`] 封装并提供优雅关闭。
+pub(crate) struct LoggerGuards {
     /// 控制台写入守卫（仅用于持有以保持生命周期，drop 时 flush）
     #[allow(dead_code)]
-    pub console: WorkerGuard,
+    console: WorkerGuard,
     /// 文件写入守卫（仅用于持有以保持生命周期，drop 时 flush）
     #[allow(dead_code)]
-    pub file: WorkerGuard,
+    file: WorkerGuard,
     /// 文件日志因 channel 满而被丢弃的行数计数器
     file_error_counter: ErrorCounter,
 }
@@ -55,9 +56,9 @@ impl Drop for LoggerGuards {
 
 /// 初始化 tracing 日志系统
 ///
-/// 返回 `LoggerGuards`，必须在程序生命周期内保持存活，否则非阻塞写入的日志会丢失。
+/// 返回 [`crate::LoggerGuard`]，必须在程序生命周期内保持存活，否则非阻塞写入的日志会丢失。
 /// 建议将返回值绑定到 `main` 函数的变量中。
-pub fn init_logger(config: &LogConfig) -> anyhow::Result<LoggerGuards> {
+pub fn init_logger(config: &LogConfig) -> anyhow::Result<crate::LoggerGuard> {
     // 解析时区（失败回退 UTC）
     let tz = parse_timezone(&config.timezone);
 
@@ -112,9 +113,11 @@ pub fn init_logger(config: &LogConfig) -> anyhow::Result<LoggerGuards> {
         .with(file_layer)
         .init();
 
-    Ok(LoggerGuards {
-        console: console_guard,
-        file: file_guard,
-        file_error_counter,
+    Ok(crate::LoggerGuard {
+        tracing: LoggerGuards {
+            console: console_guard,
+            file: file_guard,
+            file_error_counter,
+        },
     })
 }

@@ -91,9 +91,9 @@ fn parse_level(level: &str) -> LevelFilter {
 
 /// 初始化 `log` 门面日志系统
 ///
-/// 注册全局 logger（同一进程只能调用一次），日志写入滚动文件。
-/// 如需控制台输出，可自行额外配置 `log` 门面的终端后端（如 `env_logger`）。
-pub fn init_log_logger(config: &LogConfig) -> anyhow::Result<()> {
+/// 注册全局 logger（同一进程只能调用一次），同时输出控制台（带颜色）与滚动文件。
+/// 返回 [`crate::LoggerGuard`]，必须保持存活到程序结束，drop 时优雅关闭归档线程。
+pub fn init_log_logger(config: &LogConfig) -> anyhow::Result<crate::LoggerGuard> {
     let tz = parse_timezone(&config.timezone);
     let writer = RollingFileWriter::new(
         &config.dir,
@@ -114,5 +114,5 @@ pub fn init_log_logger(config: &LogConfig) -> anyhow::Result<()> {
 
     log::set_boxed_logger(Box::new(logger))?;
     log::set_max_level(LevelFilter::Trace);
-    Ok(())
+    Ok(crate::LoggerGuard {})
 }
