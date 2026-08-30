@@ -1,6 +1,6 @@
 [package]
 name = "rolling-logger"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.70"
 description = "Production-grade rolling file logger with daily/size rotation, async gzip archival, configurable timezone and fsync durability"
