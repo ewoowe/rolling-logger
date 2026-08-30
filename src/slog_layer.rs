@@ -15,13 +15,33 @@
 
 use std::fmt;
 use std::io::Write;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use chrono_tz::Tz;
 use slog::KV;
 
 use crate::config::LogConfig;
 use crate::writer::{now_in, parse_timezone, RollingFileWriter};
+
+/// Global slog `Logger`, set once during [`init_slog_logger`].
+///
+/// This is what makes the facade-agnostic macros (`rolling_logger::info!` etc.)
+/// work under `slog-backend`: the macros auto-inject this logger, so callers can
+/// use the same positional-argument syntax as `log`/`tracing` without passing a
+/// logger explicitly.
+static GLOBAL_SLOG_LOGGER: OnceLock<slog::Logger> = OnceLock::new();
+
+/// Returns the global slog `Logger` set by [`init_slog_logger`].
+///
+/// Before initialization (or if initialization failed to register a logger),
+/// falls back to a discard logger that drops everything, so the facade macros
+/// remain safe to call at any point.
+pub fn global_slog_logger() -> slog::Logger {
+    GLOBAL_SLOG_LOGGER
+        .get()
+        .cloned()
+        .unwrap_or_else(|| slog::Logger::root(slog::Discard, slog::o!()))
+}
 
 /// ANSI reset code.
 const RESET: &str = "\x1b[0m";
@@ -183,5 +203,10 @@ pub fn init_slog_logger(config: &LogConfig) -> anyhow::Result<crate::LoggerGuard
     // Logger::root requires Drain with Err = Never and Ok = (), which our
     // RollingDrain satisfies directly.
     let logger = slog::Logger::root(drain, slog::o!());
+
+    // Register the logger globally so the facade-agnostic macros
+    // (`rolling_logger::info!` etc.) can auto-inject it.
+    let _ = GLOBAL_SLOG_LOGGER.set(logger.clone());
+
     Ok(crate::LoggerGuard { slog: logger })
 }

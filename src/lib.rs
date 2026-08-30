@@ -94,6 +94,13 @@ pub use tracing_layer::init_logger;
 pub use log_layer::init_log_logger;
 #[cfg(feature = "slog-backend")]
 pub use slog_layer::init_slog_logger;
+#[cfg(feature = "slog-backend")]
+#[doc(hidden)]
+pub use slog_layer::global_slog_logger;
+// Re-export slog so the facade macros can reference `$crate::slog::info!` etc.
+// under macro hygiene (callers do not need a direct `slog` dependency).
+#[cfg(feature = "slog-backend")]
+pub use slog;
 
 /// Unified logger guard: `init` returns this type regardless of the facade.
 ///

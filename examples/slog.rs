@@ -6,8 +6,9 @@
 //! ```
 //!
 //! Note: slog macros require an explicit logger argument and use structured
-//! key-value syntax, so they are **not** part of the facade-agnostic macro
-//! layer; use slog's native macros directly.
+//! key-value syntax. The facade-agnostic macros (`rolling_logger::info!` etc.)
+//! auto-inject the global logger, so they also work under slog with the
+//! positional-argument syntax.
 
 use rolling_logger::{init, LogConfig};
 
@@ -36,6 +37,12 @@ fn main() -> anyhow::Result<()> {
     slog::debug!(log, "this line is hidden by level filter 'info'");
     slog::warn!(log, "warning via slog"; "code" => 1001);
     slog::error!(log, "error via slog"; "user_id" => 42, "action" => "login");
+
+    // Facade-agnostic macros: same positional-argument syntax as log/tracing,
+    // auto-injecting the global logger registered by `init`.
+    rolling_logger::info!("facade info: hello {}", "world");
+    rolling_logger::warn!("facade warn: code {}", 1001);
+    rolling_logger::error!("facade error: user {}", 42);
 
     Ok(())
 }
